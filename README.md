@@ -107,7 +107,7 @@ sudo usermod -aG dialout $USER
 
 ### Treat `.ino` files as C++
 
-Add to `~/.config/nvim/lua/config/lazy.lua` (or `options.lua`):
+Add to `~/.config/nvim/lua/config/options.lua`:
 
 ```lua
 vim.filetype.add({ extension = { ino = "cpp" } })
