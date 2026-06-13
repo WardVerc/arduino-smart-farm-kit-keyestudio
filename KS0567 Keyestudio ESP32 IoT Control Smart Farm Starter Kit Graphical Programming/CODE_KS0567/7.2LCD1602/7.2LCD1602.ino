@@ -13,9 +13,9 @@ void setup() {
   //Set the position o dcursor
   lcd.setCursor(0, 0);
   //LCD prints
-  lcd.print("HELLO WORLD 0");
+  lcd.print("YOOOOO");
   lcd.setCursor(0, 1);
-  lcd.print("HELLO WORLD 1");
+  lcd.print("PIPI KAKA");
 
   //Clear displays
   // lcd.clear();

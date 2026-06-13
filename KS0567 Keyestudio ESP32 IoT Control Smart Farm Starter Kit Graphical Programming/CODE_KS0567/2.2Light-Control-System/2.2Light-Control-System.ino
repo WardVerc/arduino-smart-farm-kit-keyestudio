@@ -17,9 +17,9 @@ void loop() {
   Serial.print("Photocecll value: ");
   Serial.println(ReadValue);
   //Determine:
-  //The value of the photoresistor >= 800, LED turns off
-  //The value of the photoresistor =< 800, LED turns on
-  if(ReadValue >= 800) {
+  //The value of the photoresistor >= 2400, LED turns off
+  //The value of the photoresistor =< 2400, LED turns on
+  if(ReadValue >= 2400) {
     digitalWrite(LED,LOW);
     Serial.println("LED OFF");
   }
