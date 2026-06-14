@@ -24,9 +24,12 @@
 #define FANPIN1         19  //Fan IN+ pin
 #define FANPIN2         18  //Fan IN- pin
 #define BUZZERPIN       16  //Buzzer pin
+#define BUTTONPIN       5   //Button pin
+#define TRIGPIN         12  //
+#define ECHOPIN         13  // Distance sensor
 
-const char* ssid = "your_SSID";
-const char* pwd = "your_PASSWORD";
+const char* ssid = "your wifi";
+const char* pwd = "your pasw";
 
 //Initialize LCD1602, 0x27 is I2C address
 LiquidCrystal_I2C lcd(0x27,16,2);
@@ -45,16 +48,36 @@ int Light;         //Brightness
 int WaterLevel;    //Water level
 int Rainwater;     //Rainfall
 
+bool fanOn = false;//Fan
+
 void setup() {
   Serial.begin(9600);
   //Connect to wifi
   WiFi.begin(ssid, pwd);
   //Determine whether connected
   Serial.println("Connecting to WiFi...");
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 5) {
     delay(1000);
     Serial.print(".");
+    attempts++;
   }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi failed, running offline");
+    lcd.clear();
+    lcd.setCursor(0, 0); lcd.print("WiFi failed!");
+    lcd.setCursor(0, 1); lcd.print("Offline mode");
+  } else {
+  Serial.println("Connected to WiFi");
+  Serial.print("WiFi NAME:"); Serial.println(ssid);
+  Serial.print("IP:"); Serial.println(WiFi.localIP());
+  lcd.clear();
+  lcd.setCursor(0, 0); lcd.print("IP:");
+  lcd.setCursor(0, 1); lcd.print(WiFi.localIP());
+  server.begin();
+}
+
   delay(1000);
   //Serial monitor prints wifi name and IP address
   Serial.println("Connected to WiFi");
@@ -88,6 +111,9 @@ void setup() {
   pinMode(FANPIN1,OUTPUT);
   pinMode(FANPIN2,OUTPUT);
   pinMode(BUZZERPIN,OUTPUT);
+  pinMode(BUTTONPIN, INPUT);
+  pinMode(TRIGPIN, OUTPUT);
+  pinMode(ECHOPIN, INPUT);
   delay(1000);
 
   // attaches the servo on pin 26 to the servo object
@@ -117,9 +143,9 @@ void loop() {
         dataBuffer += String(Temperature,HEX);
         dataBuffer += String(Humidity,HEX);
         dataBuffer += dataHandle(SoilHumidity);
-        dataBuffer += dataHandle(Light);
+        dataBuffer += dataHandlePercent(Light);
         dataBuffer += dataHandle(WaterLevel);
-        dataBuffer += dataHandle(Rainwater);
+        dataBuffer += dataHandlePercent(Rainwater);
         //Send data to server, transmit to APP
         client.print(dataBuffer);
         delay(500);
@@ -145,12 +171,14 @@ void loop() {
       else if(request == "c")
       {
         delay(800);
+        fanOn = true;
         digitalWrite(FANPIN1, HIGH);
         digitalWrite(FANPIN2, LOW);
         delay(200);
       }
       else if(request == "C")
       {
+        fanOn = false;
         digitalWrite(FANPIN1, LOW);
         digitalWrite(FANPIN2, LOW);
       }
@@ -175,28 +203,32 @@ void loop() {
     }
     Serial.println("Client disconnected");
   }
+  getSensorsData();
+  updateLCD();
+  autoLED();
+  checkButton();
+  autoServo();
+  checkSteamMusic();
+  //autoIrrigate();
 }
 
 void getSensorsData() {
-  //Acquire data
   int chk = DHT11.read(DHT11PIN);
-  //Steam sensor
-  Rainwater = analogRead(RAINWATERPIN);
-  //Photoresistor
-  Light = analogRead(LIGHTPIN);
-  //Soil humidity sensor
+  if (chk == DHTLIB_OK) {
+    Temperature = DHT11.temperature;
+    Humidity = DHT11.humidity;
+  }
+  // else: keep previous values, or set to -1 to indicate error
+
+  Light     = (analogRead(LIGHTPIN) / 4095.0) * 100;
+  Rainwater = (analogRead(RAINWATERPIN) / 4095.0) * 100;
   SoilHumidity = analogRead(SOILHUMIDITYPIN) * 2.3;
-  //Water level sensor
-  WaterLevel = analogRead(WATERLEVELPIN) * 2.5;
-  //Temperature
-  Temperature = DHT11.temperature;
-  //Humidity
-  Humidity = DHT11.humidity;
+  WaterLevel   = analogRead(WATERLEVELPIN) * 2.5;
 }
 
 void Music() {
   // iterate over the notes of the melody:
-  for (int thisNote = 0; thisNote < 98; thisNote++) {
+  for (int thisNote = 0; thisNote < 41; thisNote++) {
   
     // to calculate the note duration, take one second
     // divided by the note type.
@@ -225,4 +257,112 @@ String dataHandle(int data){
   sprintf(hexString, "%02X", percentage);
 
   return hexString;
+}
+
+// For values already in percentage (0-100)
+String dataHandlePercent(int data){
+  data = data > 100 ? 100 : data;
+  char hexString[3];
+  sprintf(hexString, "%02X", data);
+  return hexString;
+}
+
+void updateLCD() {
+  static int screen = 0;
+  static unsigned long lastSwitch = 0;
+  if (millis() - lastSwitch < 3000) return;
+  lastSwitch = millis();
+  lcd.clear();
+  switch (screen) {
+    case 0:
+      lcd.setCursor(0, 0); lcd.print("Temp: " + String(Temperature) + "C");
+      lcd.setCursor(0, 1); lcd.print("Hum:  " + String(Humidity) + "%");
+      break;
+    case 1:
+      lcd.setCursor(0, 0); lcd.print("Soil: " + String(SoilHumidity) + "%");
+      lcd.setCursor(0, 1); lcd.print("Water:" + String(WaterLevel) + "%");
+      break;
+    case 2:
+      lcd.setCursor(0, 0); lcd.print("Light:" + String(Light) + "%");
+      lcd.setCursor(0, 1); lcd.print("Rain: " + String(Rainwater) + "%");
+      break;
+    case 3:
+      lcd.setCursor(0, 0); lcd.print("IP:");
+      lcd.setCursor(0, 1); lcd.print(WiFi.localIP());
+      break;
+  }
+  screen = (screen + 1) % 4;
+}
+
+void autoLED() {
+  if (Light < 50) {
+    digitalWrite(LEDPIN, HIGH);
+  } else {
+    digitalWrite(LEDPIN, LOW);
+  }
+}
+
+void checkButton() {
+  int ReadValue = digitalRead(BUTTONPIN);
+  if (ReadValue == 0) {
+    delay(10);
+    if (ReadValue == 0) {
+      fanOn = !fanOn;
+      if (fanOn) {
+        digitalWrite(FANPIN1, HIGH);
+        digitalWrite(FANPIN2, LOW);
+      } else {
+        digitalWrite(FANPIN1, LOW);
+        digitalWrite(FANPIN2, LOW);
+      }
+      while (digitalRead(BUTTONPIN) == 0);
+    }
+  }
+}
+
+float getDistance() {
+  digitalWrite(TRIGPIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIGPIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIGPIN, LOW);
+  int duration = pulseIn(ECHOPIN, HIGH, 20000);
+  return duration / 58.0;
+}
+
+void autoServo() {
+  static bool isOpen = false;
+  float distance = getDistance();
+
+  if (distance >= 2 && distance <= 7 && !isOpen) {
+    isOpen = true;
+    myservo.write(80);
+    delay(500); // give servo time to reach position
+  } else if ((distance < 2 || distance > 7) && isOpen) {
+    isOpen = false;
+    myservo.write(180);
+    delay(500);
+  }
+}
+
+void checkSteamMusic() {
+  static int baseline = -1;
+  if (baseline == -1) baseline = Rainwater;
+
+  Rainwater = (analogRead(RAINWATERPIN) / 4095.0) * 100;
+
+  if (Rainwater >= baseline + 10) {
+    int randomFreq = random(200, 1000);
+    tone(BUZZERPIN, randomFreq, 100);
+  } else {
+    noTone(BUZZERPIN);
+  }
+}
+
+void autoIrrigate() {
+  if (SoilHumidity < 30) {
+    digitalWrite(RELAYPIN, HIGH);
+    delay(400);
+    digitalWrite(RELAYPIN, LOW);
+  }
 }
